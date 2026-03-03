@@ -1,0 +1,6 @@
+raw/
+outputs/
+*.pyc
+.vscode/
+*.pt
+logs/
