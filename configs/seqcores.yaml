@@ -14,7 +14,7 @@ experiment:
 dataset:
   name: "cub200"          # "celeba", "cub200", "mpi3d", "clevr"
   root: "data/raw"
-  image_size: 64
+  image_size: 228
   num_workers: 4
   mpi3d_variant: "toy"
   cub200_num_concepts: 20
@@ -41,8 +41,10 @@ model:
     residual_dim: 32        # 잔차 벡터 차원
     max_steps: 8            # 최대 시퀀스 길이 T
     commitment_cost: 0.25   # VQ commitment loss 가중치
+    ema_decay: 0.99         # EMA 코드북 업데이트 decay (0=gradient, >0=EMA)
     use_decoder: true       # Phase 1 디코더 활성화
     num_gru_layers: 1       # GRU 레이어 수
+    num_supervised_slots: -1  # 지도학습 슬롯 수 (-1=auto: min(num_concepts, max_steps))
 
 # --- Training ---
 training:
@@ -54,33 +56,23 @@ training:
   save_every: 10
   eval_every: 5
 
-  # Seq-CoRes 전용 설정
+  # Seq-CoRes v2 전용 설정
   seqcores:
     # Phase 1: VQ Codebook Warmup
     phase1_epochs: 50
     phase1_lr: 3e-4
 
-    # Phase 2: Task + Residual Squeezing
+    # Phase 2: Task + Concept Supervision
     phase2_epochs: 80
     phase2_lr: 3.0e-4
-
-    # Gumbel-Softmax Temperature Annealing
-    gumbel_tau_init: 2.0      # 초기 temperature (높음: 부드러운 탐색)
-    gumbel_tau_min: 0.05       # 최소 temperature (낮음: 이산적 선택)
-    gumbel_anneal_rate: 0.03      # Exponential decay rate (τ(80) ≈ 0.09)
 
     # Loss 가중치
     task_weight: 1.0
     vq_weight: 1.0
-    recon_weight: 1.0           # Phase 1 재구성 가중치
-    phase2_recon_weight: 0.2    # Phase 2 재구성 가중치 (Regularization, collapse 방지)
-    residual_penalty_weight: 0.1  # λ_res 최대치
-    batch_entropy_weight: 2.0  # Phase 2 배치 엔트로피 최대화
-    phase1_batch_entropy_weight: 5.0  # Phase 1 배치 엔트로피 (높게 - codebook collapse 방지)
-
-    # 잔차 패널티 Annealing
-    residual_annealing_start: 20   # Phase 2 기준 시작 에포크
-    residual_annealing_end: 70    # Phase 2 기준 최대 도달 에포크
+    recon_weight: 1.0                   # Phase 1 재구성 가중치
+    phase2_recon_weight: 0.1            # Phase 2 재구성 가중치 (Regularization)
+    concept_supervision_weight: 1.0     # 슬롯 개념 지도학습 가중치
+    residual_penalty_weight: 0.2        # 잔차 패널티 가중치 (잔차 억제)
 
 # --- Evaluation ---
 evaluation:

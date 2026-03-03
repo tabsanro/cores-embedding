@@ -129,6 +129,8 @@ def main():
     print(f"Max Steps T:   {mc.get('max_steps', 8)}")
     print(f"Hidden Dim:    {mc.get('hidden_dim', 256)}")
     print(f"Residual Dim:  {mc.get('residual_dim', 32)}")
+    print(f"EMA Decay:     {mc.get('ema_decay', 0.99)}")
+    print(f"Sup. Slots:    {mc.get('num_supervised_slots', -1)} (-1=auto)")
 
     sc = config["training"].get("seqcores", {})
     print(f"Phase 1 Epochs: {sc.get('phase1_epochs', 20)}")
@@ -162,12 +164,12 @@ def main():
         residual_dim=mc.get("residual_dim", 32),
         max_steps=mc.get("max_steps", 8),
         num_concepts=num_concepts,
-        gumbel_tau_init=sc.get("gumbel_tau_init", 1.0),
-        gumbel_tau_min=sc.get("gumbel_tau_min", 0.1),
         commitment_cost=mc.get("commitment_cost", 0.25),
+        ema_decay=mc.get("ema_decay", 0.99),
         image_size=image_size,
         use_decoder=mc.get("use_decoder", True),
         num_gru_layers=mc.get("num_gru_layers", 1),
+        num_supervised_slots=mc.get("num_supervised_slots", -1),
     )
 
     # 파라미터 수
@@ -185,12 +187,9 @@ def main():
         task_weight=sc.get("task_weight", 1.0),
         vq_weight=sc.get("vq_weight", 1.0),
         recon_weight=sc.get("recon_weight", 1.0),
-        phase2_recon_weight=sc.get("phase2_recon_weight", 0.2),
-        residual_penalty_weight=sc.get("residual_penalty_weight", 0.1),
-        batch_entropy_weight=sc.get("batch_entropy_weight", 2.0),
-        phase1_batch_entropy_weight=sc.get("phase1_batch_entropy_weight", 5.0),
-        residual_annealing_start=sc.get("residual_annealing_start", 0),
-        residual_annealing_end=sc.get("residual_annealing_end", 50),
+        phase2_recon_weight=sc.get("phase2_recon_weight", 0.1),
+        concept_supervision_weight=sc.get("concept_supervision_weight", 1.0),
+        residual_penalty_weight=sc.get("residual_penalty_weight", 0.0),
     )
 
     # =========================================================================

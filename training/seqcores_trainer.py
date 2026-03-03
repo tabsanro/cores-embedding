@@ -1,22 +1,19 @@
 """
-Seq-CoRes 전용 트레이너 — Two-Phase Training Strategy.
+Seq-CoRes v2 전용 트레이너 — Two-Phase Training Strategy.
 
 Phase 1: VQ Warmup (코드북 워밍업)
-    - Task Loss OFF, 재구성(Reconstruction) 학습만 수행
+    - 재구성(Reconstruction) 학습 + 슬롯 개념 지도학습 (절반 가중)
     - 코드북이 의미 있는 시각적 기저(Visual Basis)로 초기화
-    - Gumbel-Softmax temperature 높게 유지 (탐색 단계)
+    - VQ-STE + EMA 코드북 업데이트
 
-Phase 2: End-to-End Task + Residual Squeezing
-    - Reconstruction Loss OFF (과감히 제거)
-    - Task Loss + VQ Loss + Residual L2 Penalty
-    - Gumbel-Softmax Temperature Annealing (high → low)
-    - 잔차 패널티 점진적 강화 (λ_res: 0 → max)
-    - 코드북 사전을 필사적으로 조합하도록 강제
+Phase 2: End-to-End Task + Concept Supervision
+    - Task Loss + VQ Loss + Concept Supervision Loss
+    - 직교 투영으로 잔차 정보 누수 차단 (L2 패널티 제거)
+    - Dead Code Revival로 코드북 붕괴 방지
 """
 
 import os
 import time
-import math
 import json
 import torch
 import torch.optim as optim
@@ -26,10 +23,10 @@ import numpy as np
 
 
 class SeqCoResTrainer:
-    """Seq-CoRes Two-Phase Trainer.
+    """Seq-CoRes v2 Two-Phase Trainer.
 
-    Phase 1과 Phase 2를 통합 관리하며,
-    Gumbel-Softmax annealing 및 잔차 패널티 스케줄링을 수행합니다.
+    Phase 1과 Phase 2를 통합 관리합니다.
+    v2: Gumbel-Softmax 제거, VQ-STE + EMA, 직교 투영, 개념 지도학습.
     """
 
     def __init__(self, model, criterion, config, output_dir=None):
@@ -75,11 +72,6 @@ class SeqCoResTrainer:
         # Phase 2 설정
         self.phase2_epochs = self.sc.get("phase2_epochs", 80)
         self.phase2_lr = self.sc.get("phase2_lr", 3e-4)
-
-        # Gumbel-Softmax annealing
-        self.gumbel_tau_init = self.sc.get("gumbel_tau_init", 1.0)
-        self.gumbel_tau_min = self.sc.get("gumbel_tau_min", 0.1)
-        self.gumbel_anneal_rate = self.sc.get("gumbel_anneal_rate", 0.03)
 
         # 학습 상태
         self.current_epoch = 0
@@ -146,27 +138,15 @@ class SeqCoResTrainer:
         else:
             self.scheduler = None
 
-    def _anneal_gumbel_tau(self, epoch: int, total_epochs: int):
-        """Gumbel-Softmax temperature exponential annealing.
-
-        τ(epoch) = max(τ_min, τ_init · exp(-r · epoch))
-        """
-        tau = max(
-            self.gumbel_tau_min,
-            self.gumbel_tau_init * math.exp(-self.gumbel_anneal_rate * epoch),
-        )
-        self.model.set_gumbel_tau(tau)
-        return tau
-
     # =========================================================================
     # Phase 1: VQ Warmup
     # =========================================================================
 
     def train_phase1(self, train_loader, val_loader=None):
-        """Phase 1: 코드북 워밍업 (비지도 재구성 학습).
+        """Phase 1: 코드북 워밍업 (재구성 + 개념 지도학습).
 
-        Task Loss를 끄고, 이미지를 재구성하는 학습만 수행합니다.
-        코드북이 의미 있는 시각적 기저(선, 질감, 색상)로 초기화됩니다.
+        재구성 학습으로 코드북을 시각적 기저로 초기화하면서,
+        슬롯 개념 예측으로 코드↔개념 정렬을 시작합니다.
 
         Args:
             train_loader: 학습 데이터 로더.
@@ -176,18 +156,15 @@ class SeqCoResTrainer:
             history: Phase 1 학습 기록.
         """
         print(f"\n{'='*60}")
-        print("Phase 1: VQ Codebook Warmup (Reconstruction)")
+        print("Phase 1: VQ Codebook Warmup (Reconstruction + Concept Align)")
         print(f"  Epochs: {self.phase1_epochs}")
         print(f"  LR: {self.phase1_lr}")
-        print(f"  Gumbel τ: {self.gumbel_tau_init} (fixed, high)")
+        print(f"  VQ: STE + EMA")
         print(f"{'='*60}\n")
 
         self.current_phase = 1
         self.criterion.set_phase(1)
         self._setup_optimizer(phase=1)
-
-        # Phase 1에서는 높은 temperature 유지 (탐색)
-        self.model.set_gumbel_tau(self.gumbel_tau_init)
 
         history = {"train": [], "val": []}
         save_every = self.tc.get("save_every", 10)
@@ -203,16 +180,17 @@ class SeqCoResTrainer:
             # TensorBoard logging
             for key, val in train_losses.items():
                 self.writer.add_scalar(f"phase1/train/{key}", val, epoch)
-            self.writer.add_scalar("phase1/gumbel_tau",
-                                   self.model.get_gumbel_tau(), epoch)
             if "codebook_alive" in train_losses:
                 self.writer.add_scalar("phase1/codebook_alive",
                                        train_losses["codebook_alive"], epoch)
                 self.writer.add_scalar("phase1/codebook_utilization",
                                        train_losses["codebook_utilization"], epoch)
-            if "loss_commitment" in train_losses:
-                self.writer.add_scalar("phase1/commitment_loss",
-                                       train_losses["loss_commitment"], epoch)
+            if "loss_vq" in train_losses:
+                self.writer.add_scalar("phase1/vq_loss",
+                                       train_losses["loss_vq"], epoch)
+            if "loss_concept_supervision" in train_losses:
+                self.writer.add_scalar("phase1/concept_supervision",
+                                       train_losses["loss_concept_supervision"], epoch)
 
             # --- Validate ---
             val_info = ""
@@ -247,17 +225,14 @@ class SeqCoResTrainer:
         return history
 
     # =========================================================================
-    # Phase 2: Task + Residual Squeezing
+    # Phase 2: Task + Concept Supervision
     # =========================================================================
 
     def train_phase2(self, train_loader, val_loader=None):
-        """Phase 2: End-to-End Task 학습 + 잔차 압박.
+        """Phase 2: End-to-End Task 학습 + 개념 지도학습.
 
-        재구성(Reconstruction) Loss를 제거하고,
-        Task Loss + VQ Loss + Residual L2 Penalty로 학습합니다.
-
-        Gumbel-Softmax temperature annealing: high → low (이산화)
-        잔차 패널티 λ_res: 0 → max (점진적 강화)
+        Task Loss + VQ Loss + Concept Supervision Loss
+        직교 투영이 잔차 정보 누수를 차단합니다.
 
         Args:
             train_loader: 학습 데이터 로더.
@@ -267,11 +242,11 @@ class SeqCoResTrainer:
             history: Phase 2 학습 기록.
         """
         print(f"\n{'='*60}")
-        print("Phase 2: Task Learning + Residual Squeezing")
+        print("Phase 2: Task Learning + Concept Supervision")
         print(f"  Epochs: {self.phase2_epochs}")
         print(f"  LR: {self.phase2_lr}")
-        print(f"  Gumbel τ: {self.gumbel_tau_init} → {self.gumbel_tau_min}")
-        print(f"  λ_res: 0 → {self.criterion.residual_penalty_weight}")
+        print(f"  VQ: STE + EMA")
+        print(f"  Orthogonal Projection: ON")
         print(f"{'='*60}\n")
 
         self.current_phase = 2
@@ -286,9 +261,6 @@ class SeqCoResTrainer:
             self.current_epoch = epoch
             start_time = time.time()
 
-            # --- Gumbel-Softmax annealing ---
-            tau = self._anneal_gumbel_tau(epoch, self.phase2_epochs)
-
             # --- Train ---
             train_loss, train_losses = self._train_epoch(
                 train_loader, epoch=epoch
@@ -298,21 +270,26 @@ class SeqCoResTrainer:
             # TensorBoard logging
             for key, val in train_losses.items():
                 self.writer.add_scalar(f"phase2/train/{key}", val, epoch)
-            self.writer.add_scalar("phase2/gumbel_tau", tau, epoch)
-            if "effective_res_weight" in train_losses:
-                self.writer.add_scalar("phase2/effective_res_weight",
-                                       train_losses["effective_res_weight"], epoch)
             if "residual_norm" in train_losses:
                 self.writer.add_scalar("phase2/residual_norm",
                                        train_losses["residual_norm"], epoch)
+            if "concept_norm" in train_losses:
+                self.writer.add_scalar("phase2/concept_norm",
+                                       train_losses["concept_norm"], epoch)
+            if "orthogonality_violation" in train_losses:
+                self.writer.add_scalar("phase2/orthogonality_violation",
+                                       train_losses["orthogonality_violation"], epoch)
             if "codebook_alive" in train_losses:
                 self.writer.add_scalar("phase2/codebook_alive",
                                        train_losses["codebook_alive"], epoch)
                 self.writer.add_scalar("phase2/codebook_utilization",
                                        train_losses["codebook_utilization"], epoch)
-            if "loss_commitment" in train_losses:
-                self.writer.add_scalar("phase2/commitment_loss",
-                                       train_losses["loss_commitment"], epoch)
+            if "loss_vq" in train_losses:
+                self.writer.add_scalar("phase2/vq_loss",
+                                       train_losses["loss_vq"], epoch)
+            if "loss_concept_supervision" in train_losses:
+                self.writer.add_scalar("phase2/concept_supervision",
+                                       train_losses["loss_concept_supervision"], epoch)
 
             # --- Validate ---
             val_info = ""
@@ -330,10 +307,11 @@ class SeqCoResTrainer:
 
             elapsed = time.time() - start_time
             res_norm = train_losses.get("residual_norm", 0)
+            orth_viol = train_losses.get("orthogonality_violation", 0)
             print(f"  P2 Epoch {epoch:3d}/{self.phase2_epochs} | "
                   f"Loss: {train_loss:.4f} | "
-                  f"τ: {tau:.3f} | "
-                  f"||z_res||: {res_norm:.4f}{val_info} | "
+                  f"||z_res||: {res_norm:.4f} | "
+                  f"orth: {orth_viol:.4f}{val_info} | "
                   f"Time: {elapsed:.1f}s")
 
             # Save periodic
@@ -363,11 +341,12 @@ class SeqCoResTrainer:
             history: 전체 학습 기록.
         """
         print(f"\n{'='*60}")
-        print("Seq-CoRes Two-Phase Training")
+        print("Seq-CoRes v2 Two-Phase Training")
         print(f"  Device: {self.device}")
-        print(f"  Phase 1 (VQ Warmup):       {self.phase1_epochs} epochs")
-        print(f"  Phase 2 (Task + Squeeze):  {self.phase2_epochs} epochs")
-        print(f"  Total:                     {self.phase1_epochs + self.phase2_epochs} epochs")
+        print(f"  Phase 1 (VQ Warmup):        {self.phase1_epochs} epochs")
+        print(f"  Phase 2 (Task + Concepts):  {self.phase2_epochs} epochs")
+        print(f"  Total:                      {self.phase1_epochs + self.phase2_epochs} epochs")
+        print(f"  VQ: STE + EMA  |  Orthogonal Projection: ON")
         print(f"{'='*60}\n")
 
         history = {}
@@ -375,7 +354,7 @@ class SeqCoResTrainer:
         # Phase 1: VQ Warmup
         history["phase1"] = self.train_phase1(train_loader, val_loader)
 
-        # Phase 2: Task + Residual Squeezing
+        # Phase 2: Task + Concept Supervision
         history["phase2"] = self.train_phase2(train_loader, val_loader)
 
         self.writer.close()
@@ -412,14 +391,13 @@ class SeqCoResTrainer:
             images = images.to(self.device)
             concept_labels = concept_labels.to(self.device)
 
-            # Forward (phase를 전달하여 Phase 1 디코더 입력 통제)
+            # Forward (phase를 전달)
             output = self.model(images, phase=self.current_phase)
 
             # 코드북 사용 빈도 추적 (Dead Code Revival)
             if "concept_indices" in output:
                 self.model.codebook.update_usage(output["concept_indices"])
-                # 재초기화용 연속 공간 투영값 사용 (commitment projection 출력)
-                # 양자화된 코드가 아닌 인코더의 연속 투영값으로 죽은 코드를 덮어씀여야 합니다
+                # 재초기화용 연속 공간 투영값 사용
                 last_features_for_revival = output["z_continuous"].detach().reshape(-1, self.model.code_dim)
 
             # Loss
@@ -447,7 +425,6 @@ class SeqCoResTrainer:
             # Progress bar
             pbar.set_postfix({
                 "loss": f"{loss.item():.4f}",
-                "τ": f"{self.model.get_gumbel_tau():.3f}",
             })
 
         # === Dead Code Revival: 에포크 끝에 죽은 코드 재초기화 ===
@@ -522,7 +499,6 @@ class SeqCoResTrainer:
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "best_loss": self.best_loss,
-            "gumbel_tau": self.model.get_gumbel_tau(),
             "global_step": self.global_step,
             "config": self.config,
         }, path)
@@ -536,12 +512,10 @@ class SeqCoResTrainer:
         self.current_phase = checkpoint["phase"]
         self.best_loss = checkpoint["best_loss"]
         self.global_step = checkpoint.get("global_step", 0)
-        if "gumbel_tau" in checkpoint:
-            self.model.set_gumbel_tau(checkpoint["gumbel_tau"])
         if self.optimizer is not None and "optimizer_state_dict" in checkpoint:
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         print(f"Loaded checkpoint: phase={self.current_phase}, "
-              f"epoch={self.current_epoch}, τ={self.model.get_gumbel_tau():.3f}")
+              f"epoch={self.current_epoch}")
 
     @staticmethod
     def _make_serializable(obj):
