@@ -33,6 +33,12 @@ class Trainer:
         # Move model to device
         self.model = self.model.to(self.device)
 
+        # Multi-GPU support
+        if self.device.type == "cuda" and torch.cuda.device_count() > 1:
+            print(f"  Using {torch.cuda.device_count()} GPUs (DataParallel)")
+            self.model = nn.DataParallel(self.model)
+        self.raw_model = self.model.module if isinstance(self.model, nn.DataParallel) else self.model
+
         # Setup optimizer
         self._setup_optimizer()
 
@@ -295,7 +301,7 @@ class Trainer:
         path = os.path.join(self.output_dir, "checkpoints", filename)
         torch.save({
             "epoch": self.current_epoch,
-            "model_state_dict": self.model.state_dict(),
+            "model_state_dict": self.raw_model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "best_loss": self.best_loss,
             "config": self.config,
@@ -306,7 +312,7 @@ class Trainer:
         """Load model checkpoint."""
         path = os.path.join(self.output_dir, "checkpoints", filename)
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
-        self.model.load_state_dict(checkpoint["model_state_dict"])
+        self.raw_model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.current_epoch = checkpoint["epoch"]
         self.best_loss = checkpoint["best_loss"]

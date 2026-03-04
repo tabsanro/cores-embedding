@@ -74,10 +74,12 @@ def main():
     print("=" * 60)
     print("CoRes-Embedding Training")
     print("=" * 60)
+    num_gpus = torch.cuda.device_count() if config["experiment"]["device"] == "cuda" else 0
     print(f"Model:         {args.model}")
     print(f"Dataset:       {config['dataset']['name']}")
     print(f"Latent Dim:    {config['model']['latent_dim']}")
     print(f"Device:        {config['experiment']['device']}")
+    print(f"GPUs:          {num_gpus} {'(DataParallel)' if num_gpus > 1 else ''}")
     print(f"Epochs:        {config['training']['epochs']}")
     print(f"Batch Size:    {config['training']['batch_size']}")
     print("=" * 60)

@@ -367,6 +367,12 @@ class LatentDecoder(nn.Module):
         h = self.fc(z)
         h = h.view(-1, self.init_channels, self.init_size, self.init_size)
         x_recon = self.decoder_conv(h)
+        # Resize to target image_size if decoder output doesn't match
+        if x_recon.shape[-1] != self.image_size or x_recon.shape[-2] != self.image_size:
+            x_recon = F.interpolate(
+                x_recon, size=(self.image_size, self.image_size),
+                mode="bilinear", align_corners=False,
+            )
         return x_recon
 
 

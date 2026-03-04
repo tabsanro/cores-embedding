@@ -45,6 +45,12 @@ class SeqCoResTrainer:
         # 모델을 디바이스로 이동
         self.model = self.model.to(self.device)
 
+        # Multi-GPU support
+        if self.device.type == "cuda" and torch.cuda.device_count() > 1:
+            print(f"  Using {torch.cuda.device_count()} GPUs (DataParallel)")
+            self.model = torch.nn.DataParallel(self.model)
+        self.raw_model = self.model.module if isinstance(self.model, torch.nn.DataParallel) else self.model
+
         # 출력 디렉토리
         if output_dir is None:
             self.output_dir = os.path.join(
@@ -380,7 +386,7 @@ class SeqCoResTrainer:
         last_features_for_revival = None  # Dead Code Revival용
 
         # 에포크 시작 시 사용 통계 초기화
-        self.model.codebook.reset_usage_stats()
+        self.raw_model.codebook.reset_usage_stats()
 
         phase_name = f"Phase {self.current_phase}"
         pbar = tqdm(train_loader,
@@ -396,9 +402,9 @@ class SeqCoResTrainer:
 
             # 코드북 사용 빈도 추적 (Dead Code Revival)
             if "concept_indices" in output:
-                self.model.codebook.update_usage(output["concept_indices"])
+                self.raw_model.codebook.update_usage(output["concept_indices"])
                 # 재초기화용 연속 공간 투영값 사용
-                last_features_for_revival = output["z_continuous"].detach().reshape(-1, self.model.code_dim)
+                last_features_for_revival = output["z_continuous"].detach().reshape(-1, self.raw_model.code_dim)
 
             # Loss
             loss, loss_dict = self.criterion(
@@ -428,15 +434,15 @@ class SeqCoResTrainer:
             })
 
         # === Dead Code Revival: 에포크 끝에 죽은 코드 재초기화 ===
-        usage_stats = self.model.codebook.get_usage_stats()
+        usage_stats = self.raw_model.codebook.get_usage_stats()
         num_dead = usage_stats["dead_codes"]
         if num_dead > 0 and last_features_for_revival is not None:
-            num_restarted = self.model.codebook.restart_dead_codes(
+            num_restarted = self.raw_model.codebook.restart_dead_codes(
                 last_features_for_revival, dead_threshold=1.0
             )
             if num_restarted > 0:
                 tqdm.write(
-                    f"  🔄 Dead Code Revival: {num_restarted}/{self.model.num_codes} "
+                    f"  🔄 Dead Code Revival: {num_restarted}/{self.raw_model.num_codes} "
                     f"codes restarted (alive: {usage_stats['alive_codes']} → "
                     f"{usage_stats['alive_codes'] + num_restarted})"
                 )
@@ -496,7 +502,7 @@ class SeqCoResTrainer:
         torch.save({
             "epoch": self.current_epoch,
             "phase": self.current_phase,
-            "model_state_dict": self.model.state_dict(),
+            "model_state_dict": self.raw_model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "best_loss": self.best_loss,
             "global_step": self.global_step,
@@ -507,7 +513,7 @@ class SeqCoResTrainer:
         """체크포인트 로드."""
         path = os.path.join(self.output_dir, "checkpoints", filename)
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
-        self.model.load_state_dict(checkpoint["model_state_dict"])
+        self.raw_model.load_state_dict(checkpoint["model_state_dict"])
         self.current_epoch = checkpoint["epoch"]
         self.current_phase = checkpoint["phase"]
         self.best_loss = checkpoint["best_loss"]
