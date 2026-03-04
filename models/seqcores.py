@@ -697,7 +697,8 @@ class SeqCoResModel(nn.Module):
                  ema_decay: float = 0.99,
                  image_size: int = 64, use_decoder: bool = True,
                  num_gru_layers: int = 1,
-                 num_supervised_slots: int = -1):
+                 num_supervised_slots: int = -1,
+                 arch: str = "resnet18"):
         """
         Args:
             latent_dim:          최종 임베딩 차원 D.
@@ -713,6 +714,7 @@ class SeqCoResModel(nn.Module):
             use_decoder:         디코더 포함 여부 (Phase 1용).
             num_gru_layers:      GRU 레이어 수.
             num_supervised_slots: 지도학습 슬롯 수 (-1이면 min(num_concepts, max_steps)).
+            arch:                백본 아키텍처 이름 (default.yaml의 model.backbone).
         """
         super().__init__()
 
@@ -732,7 +734,7 @@ class SeqCoResModel(nn.Module):
             self.num_supervised_slots = min(num_supervised_slots, max_steps)
 
         # 1. 시각적 인코더 (Shared Backbone — 공간 특징맵 + 풀링)
-        self.backbone = SharedBackbone(pretrained=True)
+        self.backbone = SharedBackbone(arch=arch, pretrained=True)
         self.visual_dim = self.backbone.feature_dim  # 512
 
         # 2. 자생적 개념 사전 (Discrete Codebook + EMA)

@@ -417,7 +417,8 @@ class VCoResModel(nn.Module):
     def __init__(self, latent_dim=64, num_concepts=20,
                  concept_dim=32, residual_dim=32,
                  use_soft_concepts=True, concept_temperature=1.0,
-                 aggregation="sum", image_size=64, use_decoder=True):
+                 aggregation="sum", image_size=64, use_decoder=True,
+                 arch="resnet18"):
         """
         Args:
             latent_dim: Total latent dimension budget D.
@@ -429,6 +430,7 @@ class VCoResModel(nn.Module):
             aggregation: Aggregation method ("sum" or "projection").
             image_size: Input/output image spatial size (for decoder).
             use_decoder: Whether to include decoder for reconstruction.
+            arch: Backbone architecture (e.g. "resnet18", "efficientnet_b3").
         """
         super().__init__()
 
@@ -439,7 +441,7 @@ class VCoResModel(nn.Module):
         self.use_decoder = use_decoder
 
         # Shared backbone
-        self.backbone = SharedBackbone(pretrained=False)
+        self.backbone = SharedBackbone(arch=arch, pretrained=False)
 
         # Variational concept branch (replaces deterministic ConceptBranch)
         self.concept_branch = VariationalConceptBranch(

@@ -23,13 +23,15 @@ class BaselineModel(nn.Module):
     """
 
     def __init__(self, latent_dim=64, num_concepts=20,
-                 method="simclr", temperature=0.5):
+                 method="simclr", temperature=0.5,
+                 arch="resnet18"):
         """
         Args:
             latent_dim: Total latent dimension D.
             num_concepts: Number of concepts (for supervised head).
             method: Training method - "simclr" or "supervised".
             temperature: SimCLR temperature parameter.
+            arch: Backbone architecture (e.g. "resnet18", "efficientnet_b3").
         """
         super().__init__()
 
@@ -39,7 +41,7 @@ class BaselineModel(nn.Module):
         self.temperature = temperature
 
         # Shared backbone
-        self.backbone = SharedBackbone(pretrained=False)
+        self.backbone = SharedBackbone(arch=arch, pretrained=False)
 
         # Projection head: backbone features → latent space
         self.projector = nn.Sequential(

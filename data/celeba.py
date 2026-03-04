@@ -47,14 +47,7 @@ class CelebADataset(Dataset):
         self.split = split
         self.transform = transform
 
-        if concept_attrs is None:
-            self.concept_attrs = [
-                "Male", "Eyeglasses", "Smiling", "Young",
-                "Blond_Hair", "Black_Hair", "Brown_Hair",
-                "Bangs", "Heavy_Makeup", "Wearing_Hat",
-            ]
-        else:
-            self.concept_attrs = concept_attrs
+        self.concept_attrs = concept_attrs if concept_attrs is not None else self.ALL_ATTRS
 
         self.concept_indices = [
             self.ALL_ATTRS.index(a) for a in self.concept_attrs
@@ -129,7 +122,7 @@ class CelebADataset(Dataset):
         rng = np.random.RandomState(seed)
         n = 5000 if self.split == "train" else 1000
 
-        self.syn_images = rng.randint(0, 256, (n, 64, 64, 3), dtype=np.uint8)
+        self.syn_images = rng.randint(0, 256, (n, 224, 224, 3), dtype=np.uint8)
         # Binary attributes
         self.attrs = rng.randint(0, 2, (n, 40)).astype(np.float32)
         self.synthetic = True
@@ -162,7 +155,7 @@ class CelebADataset(Dataset):
 
 def get_celeba_loaders(config):
     """Get CelebA train/test data loaders."""
-    img_size = config["dataset"].get("image_size", 64)
+    img_size = config["dataset"].get("image_size", 224)
     root = config["dataset"].get("root", "data/raw")
     batch_size = config["training"]["batch_size"]
     num_workers = config["dataset"].get("num_workers", 4)

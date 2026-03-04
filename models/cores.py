@@ -201,7 +201,7 @@ class CoResModel(nn.Module):
     def __init__(self, latent_dim=64, num_concepts=20,
                  concept_dim=32, residual_dim=32,
                  use_soft_concepts=True, concept_temperature=1.0,
-                 aggregation="sum"):
+                 aggregation="sum", arch="resnet18"):
         """
         Args:
             latent_dim: Total latent dimension budget D.
@@ -211,6 +211,7 @@ class CoResModel(nn.Module):
             use_soft_concepts: Use soft (probabilistic) concept assignment.
             concept_temperature: Temperature for concept prediction.
             aggregation: Aggregation method ("sum" or "projection").
+            arch: Backbone architecture (e.g. "resnet18", "efficientnet_b3").
         """
         super().__init__()
 
@@ -220,7 +221,7 @@ class CoResModel(nn.Module):
         self.residual_dim = residual_dim
 
         # Shared backbone
-        self.backbone = SharedBackbone(pretrained=False)
+        self.backbone = SharedBackbone(arch=arch, pretrained=False)
 
         # Concept branch
         self.concept_branch = ConceptBranch(

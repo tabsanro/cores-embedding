@@ -13,27 +13,21 @@ experiment:
 dataset:
   name: "celeba"  # "mpi3d", "clevr", or "celeba"
   root: "data/raw"
-  image_size: 64
+  image_size: 224
   num_workers: 4
   # MPI3D specific
   mpi3d_variant: "toy"  # "toy", "realistic", or "real"
   # CelebA specific
-  celeba_attrs:  # Concept attributes for CelebA
-    - "Male"
-    - "Eyeglasses"
-    - "Smiling"
-    - "Young"
-    - "Blond_Hair"
-    - "Black_Hair"
-    - "Brown_Hair"
-    - "Bangs"
-    - "Heavy_Makeup"
-    - "Wearing_Hat"
+  # celeba_attrs: null  # null이면 40개 전체 속성 사용 (기본값)
 
 # --- Model ---
 model:
   latent_dim: 64            # Total latent dimension budget D
-  backbone: "resnet18"      # Shared backbone
+  backbone: "resnet18"      # Shared backbone.
+                            # ResNet:      resnet18 | resnet34 | resnet50 | resnet101 | resnet152
+                            # DenseNet:    densenet121 | densenet169 | densenet201 | densenet161
+                            # EfficientNet: efficientnet_b0 ~ efficientnet_b7
+                            # 모든 아키텍처의 출력은 FC 투영으로 512 차원으로 고정됩니다.
 
   # Baseline (Monolithic) specific
   baseline:

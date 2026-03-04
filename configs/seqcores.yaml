@@ -14,7 +14,7 @@ experiment:
 dataset:
   name: "cub200"          # "celeba", "cub200", "mpi3d", "clevr"
   root: "data/raw"
-  image_size: 228
+  image_size: 224
   num_workers: 4
   mpi3d_variant: "toy"
   cub200_num_concepts: 20

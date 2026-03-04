@@ -11,12 +11,15 @@ def build_model(config, num_concepts):
     model_type = config.get("_model_type", "cores")
     latent_dim = config["model"]["latent_dim"]
 
+    arch = config["model"].get("backbone", "resnet18")
+
     if model_type == "baseline":
         return BaselineModel(
             latent_dim=latent_dim,
             num_concepts=num_concepts,
             method=config["model"]["baseline"]["method"],
             temperature=config["model"]["baseline"]["temperature"],
+            arch=arch,
         )
     elif model_type == "cores":
         concept_dim = config["model"]["cores"]["concept_dim"]
@@ -30,6 +33,7 @@ def build_model(config, num_concepts):
             use_soft_concepts=config["model"]["cores"]["use_soft_concepts"],
             concept_temperature=config["model"]["cores"]["concept_temperature"],
             aggregation=config["model"]["cores"]["aggregation"],
+            arch=arch,
         )
     elif model_type == "vcores":
         vcores_cfg = config["model"].get("vcores", config["model"]["cores"])
@@ -47,6 +51,7 @@ def build_model(config, num_concepts):
             aggregation=vcores_cfg.get("aggregation", "sum"),
             image_size=image_size,
             use_decoder=vcores_cfg.get("use_decoder", True),
+            arch=arch,
         )
     elif model_type == "seqcores":
         sc_cfg = config["model"].get("seqcores", {})
@@ -67,6 +72,7 @@ def build_model(config, num_concepts):
             image_size=image_size,
             use_decoder=sc_cfg.get("use_decoder", True),
             num_gru_layers=sc_cfg.get("num_gru_layers", 1),
+            arch=arch,
         )
     else:
         raise ValueError(f"Unknown model type: {model_type}")

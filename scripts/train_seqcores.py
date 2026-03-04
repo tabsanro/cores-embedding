@@ -170,6 +170,7 @@ def main():
         use_decoder=mc.get("use_decoder", True),
         num_gru_layers=mc.get("num_gru_layers", 1),
         num_supervised_slots=mc.get("num_supervised_slots", -1),
+        arch=config["model"].get("backbone", "resnet18"),
     )
 
     # 파라미터 수
