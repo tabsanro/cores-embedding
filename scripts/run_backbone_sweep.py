@@ -128,7 +128,6 @@ def train_single(backbone: str, model_type: str, cfg: dict,
 
     set_seed(cfg["experiment"]["seed"])
 
-    # num_concepts 주입
     if model_type == "cores":
         cfg["model"]["cores"]["num_concepts"] = num_concepts
     elif model_type == "vcores":
@@ -142,6 +141,14 @@ def train_single(backbone: str, model_type: str, cfg: dict,
 
     trainer = Trainer(model, cfg, model_type=model_type)
     history = trainer.train(train_loader, test_loader)
+
+    # ✅ 명시적 메모리 해제
+    del trainer
+    del model
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
+
     return history
 
 
