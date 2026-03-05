@@ -14,7 +14,7 @@ dataset:
   name: "celeba"  # "mpi3d", "clevr", or "celeba"
   root: "data/raw"
   image_size: 224
-  num_workers: 4
+  num_workers: 40
   # MPI3D specific
   mpi3d_variant: "toy"  # "toy", "realistic", or "real"
   # CelebA specific
@@ -89,9 +89,10 @@ training:
 evaluation:
   # Experiment 1: Perturbation Stability
   perturbation:
-    noise_types: ["gaussian", "adversarial"]
+    noise_types: ["gaussian", "adversarial", "pgd"]
     noise_levels: [0.01, 0.05, 0.1, 0.2, 0.3, 0.5, 0.8, 1.0]
     adversarial_epsilon: [0.01, 0.03, 0.05, 0.1]
+    pgd_steps: [1, 3, 5, 10, 20, 40]  # PGD iterations; epsilon fixed at 8/255
     num_samples: 1000
 
   # Experiment 2: Few-shot Generalization

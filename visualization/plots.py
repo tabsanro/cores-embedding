@@ -137,6 +137,77 @@ class ResultsPlotter:
             filename = f"perturbation_stability_{noise_type}"
         self._save_figure(fig, filename)
 
+    def plot_pgd_stability(self, baseline_results, cores_results,
+                           epsilon=8/255, filename=None):
+        """Plot PGD adversarial stability.
+
+        X-axis: Number of PGD steps
+        Y-axis: Embedding Cosine Similarity
+        Epsilon is fixed at 8/255.
+
+        Args:
+            baseline_results: Dict mapping num_steps → metrics.
+            cores_results: Dict mapping num_steps → metrics.
+            epsilon: Fixed L∞ budget (for display only).
+            filename: Output filename.
+        """
+        fig, ax = plt.subplots(1, 1, figsize=self.figsize)
+
+        steps = sorted(baseline_results.keys())
+
+        baseline_means = [baseline_results[s]["cosine_similarity_mean"] for s in steps]
+        baseline_stds  = [baseline_results[s]["cosine_similarity_std"]  for s in steps]
+
+        cores_means = [cores_results[s]["cosine_similarity_mean"] for s in steps]
+        cores_stds  = [cores_results[s]["cosine_similarity_std"]  for s in steps]
+
+        ax.plot(steps, baseline_means, "o-",
+                color=self.colors["baseline"], label=self.labels["baseline"],
+                linewidth=2, markersize=8)
+        ax.fill_between(steps,
+                        np.array(baseline_means) - np.array(baseline_stds),
+                        np.array(baseline_means) + np.array(baseline_stds),
+                        alpha=0.15, color=self.colors["baseline"])
+
+        ax.plot(steps, cores_means, "s-",
+                color=self.colors["cores"], label=self.labels["cores"],
+                linewidth=2, markersize=8)
+        ax.fill_between(steps,
+                        np.array(cores_means) - np.array(cores_stds),
+                        np.array(cores_means) + np.array(cores_stds),
+                        alpha=0.15, color=self.colors["cores"])
+
+        # Plot concept / residual decomposition if available
+        if "concept_stability_mean" in cores_results[steps[0]]:
+            concept_means  = [cores_results[s]["concept_stability_mean"]  for s in steps]
+            residual_means = [cores_results[s]["residual_stability_mean"] for s in steps]
+
+            ax.plot(steps, concept_means, "^--",
+                    color=self.colors["cores_concept"],
+                    label=self.labels["cores_concept"],
+                    linewidth=1.5, markersize=6, alpha=0.7)
+            ax.plot(steps, residual_means, "v--",
+                    color=self.colors["cores_residual"],
+                    label=self.labels["cores_residual"],
+                    linewidth=1.5, markersize=6, alpha=0.7)
+
+        ax.set_xlabel("PGD Steps", fontsize=14)
+        ax.set_ylabel("Embedding Cosine Similarity", fontsize=14)
+        ax.set_title(
+            f"PGD Adversarial Stability  (ε = 8/255 ≈ {epsilon:.4f})",
+            fontsize=15, fontweight="bold"
+        )
+        ax.legend(fontsize=11, loc="lower left")
+        ax.set_ylim(-0.05, 1.05)
+        ax.set_xticks(steps)
+        ax.tick_params(labelsize=12)
+
+        plt.tight_layout()
+
+        if filename is None:
+            filename = "perturbation_stability_pgd"
+        self._save_figure(fig, filename)
+
     def plot_fewshot_generalization(self, baseline_results, cores_results,
                                     filename=None):
         """Plot Experiment 2: Few-shot Generalization.
@@ -397,6 +468,12 @@ class ResultsPlotter:
                     baseline["perturbation"]["adversarial"],
                     cores["perturbation"]["adversarial"],
                     noise_type="adversarial",
+                )
+            if ("pgd" in baseline["perturbation"]
+                    and "pgd" in cores["perturbation"]):
+                self.plot_pgd_stability(
+                    baseline["perturbation"]["pgd"],
+                    cores["perturbation"]["pgd"],
                 )
 
         # 2. Few-shot Generalization
