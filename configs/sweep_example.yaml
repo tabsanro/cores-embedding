@@ -1,0 +1,31 @@
+# =============================================================================
+# Backbone Sweep 실험 설정 예시
+# =============================================================================
+# 사용법:
+#   python scripts/run_backbone_sweep.py --sweep-config configs/sweep_example.yaml
+
+# 비교할 backbone 목록
+backbones:
+  - resnet18
+  - resnet50
+  - densenet121
+  - resnet34
+  - efficientnet_b0
+  - vit_b_16
+
+# 비교할 모델 종류 (baseline, cores)
+models:
+  - baseline
+  - cores
+
+# 에폭 수 (미지정 시 base config의 epochs 사용)
+epochs: 50
+
+# 학습 후 평가 실행 여부
+evaluate: True
+
+# 결과 저장 경로 (미지정 시 outputs/backbone_sweep_<timestamp>)
+# output_dir: "outputs/my_sweep"
+
+# device override (미지정 시 base config 사용)
+# device: "cuda"
