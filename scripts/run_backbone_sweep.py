@@ -147,6 +147,7 @@ def train_single(backbone: str, model_type: str, cfg: dict,
     del model
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+    import gc
     gc.collect()
 
     return history
