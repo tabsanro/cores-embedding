@@ -53,7 +53,8 @@ class CoResModel(nn.Module):
 
     def __init__(self, latent_dim=64, num_concepts=20, concept_dim=32, residual_dim=32,
                  use_soft_concepts=True, concept_temperature=1.0,
-                 aggregation="sum", arch="resnet18"):
+                 aggregation="sum", arch="resnet18",
+                 residual_scale: float = 1.0):
         super().__init__()
         self.num_concepts = num_concepts
         self.aggregation_type = aggregation
@@ -71,6 +72,8 @@ class CoResModel(nn.Module):
             nn.Linear(128, residual_dim),
         )
 
+        self.residual_scale = residual_scale
+
         if aggregation == "sum":
             self.concept_proj = nn.Linear(concept_dim, latent_dim)
             self.residual_proj = nn.Linear(residual_dim, latent_dim)
@@ -87,7 +90,13 @@ class CoResModel(nn.Module):
 
     def _aggregate(self, z_concept, z_residual):
         if self.aggregation_type == "sum":
-            return self.concept_proj(z_concept) + self.residual_proj(z_residual)
+            concept_part = self.concept_proj(z_concept)
+            residual_part = self.residual_proj(z_residual)
+            # Gram-Schmidt 직교 투영 (SeqCoRes 방식 차용)
+            dot = (residual_part * concept_part).sum(dim=-1, keepdim=True)
+            norm_sq = (concept_part * concept_part).sum(dim=-1, keepdim=True).clamp(min=1e-8)
+            residual_orth = residual_part - (dot / norm_sq) * concept_part
+            return concept_part + residual_orth
         return self.proj(torch.cat([z_concept, z_residual], dim=-1))
 
     def encode(self, x):
